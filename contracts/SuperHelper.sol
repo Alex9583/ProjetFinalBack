@@ -11,7 +11,6 @@ contract SuperHelper is Ownable {
     enum JobStatus {
         CREATED,
         TAKEN,
-        IN_REVIEW,
         COMPLETED,
         CANCELLED
     }
@@ -29,11 +28,13 @@ contract SuperHelper is Ownable {
     uint256 public jobCount;
 
     event FirstRegistration(address newUser);
-    event JobAdded(address indexed author, string description, uint price, uint id, bool isFinished);
+    event JobAdded(address indexed creator, string description, uint price, uint id, bool isFinished);
     event JobTaken(address indexed worker, uint id);
-    event JobReviewed(uint id, uint8 stars);
-    event JobIsFinishedAndPaid(address indexed author, address indexed worker, uint id, uint pricePaid);
-    event JobCanceled(address indexed author, uint id);
+    event JobIsCompletedAndPaid(address indexed creator, address indexed worker, uint id, uint pricePaid, uint stars);
+    event JobIsCompletedButNotPaid(address indexed creator, address indexed worker, uint id, uint pricePaid, uint stars);
+    event JobCanceled(address indexed creator, uint id);
+
+    error FundsFailedToBeTransfer();
 
     constructor() Ownable(msg.sender) {
         helperToken = new HelperToken();
@@ -50,7 +51,7 @@ contract SuperHelper is Ownable {
         require(helperToken.balanceOf(msg.sender) >= _reward, "Insufficient funds");
         require(helperToken.allowance(msg.sender, address(this)) >= _reward, "Allowance necessary");
 
-        require(helperToken.transferFrom(msg.sender, address(this), _reward), "Funds failed to be transfer");
+        require(helperToken.transferFrom(msg.sender, address(this), _reward), FundsFailedToBeTransfer());
 
         jobs[jobCount] = Job({
             creator: msg.sender,
@@ -72,5 +73,25 @@ contract SuperHelper is Ownable {
         job.status = JobStatus.TAKEN;
         jobs[_jobId] = job;
         emit JobTaken(msg.sender, _jobId);
+    }
+
+    function completeAndReviewJob(uint256 _jobId, uint8 _rating) external {
+        Job memory job = jobs[_jobId];
+        require(msg.sender == job.creator, "Only the creator can mark the job as complete and review it");
+        require(job.status == JobStatus.TAKEN, "Job has to be taken");
+        require(_rating >= 0 && _rating <= 5, "The rate has to be between 0 and 5");
+
+        job.stars = _rating;
+        job.status = JobStatus.COMPLETED;
+
+        if (_rating > 2) {
+            require(helperToken.transfer(job.worker, job.reward), FundsFailedToBeTransfer());
+            jobs[_jobId] = job;
+            emit JobIsCompletedAndPaid(job.creator, job.worker, _jobId, job.reward, _rating);
+        } else {
+            require(helperToken.transfer(job.creator, job.reward), FundsFailedToBeTransfer());
+            jobs[_jobId] = job;
+            emit JobIsCompletedButNotPaid(job.creator, job.worker, _jobId, job.reward, _rating);
+        }
     }
 }
