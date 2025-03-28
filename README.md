@@ -38,7 +38,7 @@ ETHERSCAN_API_KEY=your_etherscan_api_key
 Deploy using Hardhat:
 
 ```bash
-npx hardhat ignition deploy ignition/modules/<FILE_NAME> --network <network_name> [--verify]
+npx hardhat ignition deploy ignition/modules/SuperHelper.ts --network <network_name> [--verify]
 ```
 
 Example network names:
