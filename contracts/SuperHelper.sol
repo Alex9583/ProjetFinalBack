@@ -53,7 +53,7 @@ contract SuperHelper is Ownable {
     event JobIsCompletedButNotPaid(address indexed creator, address indexed worker, uint id, uint pricePaid, uint stars);
     event JobCanceled(address indexed creator, uint id);
 
-    error FundsFailedToBeTransfer();
+    error FundsFailedToBeTransferred();
     error InsufficientAllowance(uint256 required);
     error InsufficientFunds(uint256 required);
     error JobStatusIncorrect(JobStatus current, JobStatus expected);
@@ -93,10 +93,10 @@ contract SuperHelper is Ownable {
     * @param _reward Amount offered as reward for job completion.
     */
     function createJob(string memory _description, uint256 _reward) external onlyRegisteredUser {
+        _applyDepreciationIfNeeded(0);
         require(helperToken.balanceOf(msg.sender) >= _reward, InsufficientFunds(_reward));
         require(helperToken.allowance(msg.sender, address(this)) >= _reward, InsufficientAllowance(_reward));
-        require(helperToken.transferFrom(msg.sender, address(this), _reward), FundsFailedToBeTransfer());
-        _applyDepreciationIfNeeded(0);
+        require(helperToken.transferFrom(msg.sender, address(this), _reward), FundsFailedToBeTransferred());
 
         jobs[jobCount] = Job({
             creator: msg.sender,
@@ -149,12 +149,12 @@ contract SuperHelper is Ownable {
         _updateActivity();
 
         if (_rating > 2) {
-            require(helperToken.transfer(job.worker, job.reward), FundsFailedToBeTransfer());
+            require(helperToken.transfer(job.worker, job.reward), FundsFailedToBeTransferred());
             jobs[_jobId] = job;
             _updateBadgeActivity(job.worker);
             emit JobIsCompletedAndPaid(job.creator, job.worker, _jobId, job.reward, _rating);
         } else {
-            require(helperToken.transfer(job.creator, job.reward), FundsFailedToBeTransfer());
+            require(helperToken.transfer(job.creator, job.reward), FundsFailedToBeTransferred());
             jobs[_jobId] = job;
             emit JobIsCompletedButNotPaid(job.creator, job.worker, _jobId, job.reward, _rating);
         }
@@ -173,9 +173,10 @@ contract SuperHelper is Ownable {
         _applyDepreciationIfNeeded(0);
 
         job.status = JobStatus.CANCELLED;
-        helperToken.transfer(job.creator, job.reward);
+        require(helperToken.transfer(job.creator, job.reward));
         jobs[_jobId] = job;
         _updateActivity();
+        emit JobCanceled(msg.sender, _jobId);
     }
 
 
