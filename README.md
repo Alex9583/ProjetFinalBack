@@ -38,9 +38,18 @@ ETHERSCAN_API_KEY=your_etherscan_api_key
 Deploy using Hardhat:
 
 ```bash
-npx hardhat ignition deploy ignition/modules/<FILE_NAME> --network <network_name> [--verify]
+npx hardhat ignition deploy ignition/modules/SuperHelper.ts --network <network_name> [--verify]
 ```
 
 Example network names:
 - Local development: `localhost`
 - Ethereum testnet: `sepolia`
+
+### Test coverage
+
+| File              | % Stmts | % Branch | % Funcs | % Lines | Uncovered Lines |
+|-------------------|---------|----------|---------|---------|-----------------|
+| contracts/        | 100     | 86.67    | 100     | 100     |                 |
+| HelperToken.sol   | 100     | 100      | 100     | 100     |                 |
+| SuperHelper.sol   | 100     | 86.67    | 100     | 100     |                 |
+| **All files**     | **100** | **86.67**| **100** | **100** |                 |
