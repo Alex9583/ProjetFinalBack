@@ -1,6 +1,15 @@
 # SuperHelper project
 
-Project description soon
+**SuperHelper** is a decentralized application allowing registered users to:
+- Receive an initial allocation of `HELP` tokens upon registration.
+- Post job offers specifying token-based rewards.
+- Accept jobs posted by other users.
+- Complete tasks and receive payments in custom ERC20 `HELP` tokens.
+- Rate the quality of completed jobs via a star-rating system.
+- Earn visual recognition badges (Bronze, Silver, Gold), reflecting their activity and reliability within the platform.
+
+The platform utilizes its custom ERC20 token (`HELP`) to facilitate interactions between users.
+
 
 ### Project Setup
 
@@ -47,9 +56,9 @@ Example network names:
 
 ### Test coverage
 
-| File              | % Stmts | % Branch | % Funcs | % Lines | Uncovered Lines |
-|-------------------|---------|----------|---------|---------|-----------------|
-| contracts/        | 100     | 86.67    | 100     | 100     |                 |
-| HelperToken.sol   | 100     | 100      | 100     | 100     |                 |
-| SuperHelper.sol   | 100     | 86.67    | 100     | 100     |                 |
-| **All files**     | **100** | **86.67**| **100** | **100** |                 |
+| File              | % Stmts | % Branch  | % Funcs | % Lines | Uncovered Lines |
+|-------------------|---------|-----------|---------|---------|-----------------|
+| contracts/        | 100     | 92.31     | 100     | 100     |                 |
+| HelperToken.sol   | 100     | 100       | 100     | 100     |                 |
+| SuperHelper.sol   | 100     | 92.31     | 100     | 100     |                 |
+| **All files**     | **100** | **92.31** | **100** | **100** |                 |

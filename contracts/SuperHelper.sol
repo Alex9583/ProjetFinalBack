@@ -1,15 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import "@openzeppelin/contracts/access/Ownable.sol";
-
 import {HelperToken} from "./HelperToken.sol";
 
 /*
  * @title Contract for managing jobs and user rewards with HelperToken
  * @notice Allows registered users to create, accept, complete, and rate paid jobs
  */
-contract SuperHelper is Ownable {
+contract SuperHelper {
     HelperToken public helperToken;
 
     enum JobStatus {
@@ -53,12 +51,11 @@ contract SuperHelper is Ownable {
     event JobIsCompletedButNotPaid(address indexed creator, address indexed worker, uint id, uint pricePaid, uint stars);
     event JobCanceled(address indexed creator, uint id);
 
-    error FundsFailedToBeTransferred();
     error InsufficientAllowance(uint256 required);
     error InsufficientFunds(uint256 required);
     error JobStatusIncorrect(JobStatus current, JobStatus expected);
 
-    constructor() Ownable(msg.sender) {
+    constructor() {
         helperToken = new HelperToken();
     }
 
@@ -96,7 +93,7 @@ contract SuperHelper is Ownable {
         _applyDepreciationIfNeeded(0);
         require(helperToken.balanceOf(msg.sender) >= _reward, InsufficientFunds(_reward));
         require(helperToken.allowance(msg.sender, address(this)) >= _reward, InsufficientAllowance(_reward));
-        require(helperToken.transferFrom(msg.sender, address(this), _reward), FundsFailedToBeTransferred());
+        helperToken.transferFrom(msg.sender, address(this), _reward);
 
         jobs[jobCount] = Job({
             creator: msg.sender,
@@ -149,12 +146,12 @@ contract SuperHelper is Ownable {
         _updateActivity();
 
         if (_rating > 2) {
-            require(helperToken.transfer(job.worker, job.reward), FundsFailedToBeTransferred());
+            helperToken.transfer(job.worker, job.reward);
             jobs[_jobId] = job;
             _updateBadgeActivity(job.worker);
             emit JobIsCompletedAndPaid(job.creator, job.worker, _jobId, job.reward, _rating);
         } else {
-            require(helperToken.transfer(job.creator, job.reward), FundsFailedToBeTransferred());
+            helperToken.transfer(job.creator, job.reward);
             jobs[_jobId] = job;
             emit JobIsCompletedButNotPaid(job.creator, job.worker, _jobId, job.reward, _rating);
         }
@@ -173,7 +170,7 @@ contract SuperHelper is Ownable {
         _applyDepreciationIfNeeded(0);
 
         job.status = JobStatus.CANCELLED;
-        require(helperToken.transfer(job.creator, job.reward));
+        helperToken.transfer(job.creator, job.reward);
         jobs[_jobId] = job;
         _updateActivity();
         emit JobCanceled(msg.sender, _jobId);
