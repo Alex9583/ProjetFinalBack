@@ -180,7 +180,7 @@ contract SuperHelper {
     /**
     * @dev Updates msg sender's last activity timestamp to current block time.
     */
-    function _updateActivity() internal {
+    function _updateActivity() private {
         users[msg.sender].lastActivity = block.timestamp;
     }
 
@@ -190,7 +190,7 @@ contract SuperHelper {
     * Badge upgrades occur at 10 (BRONZE), 30 (SILVER), and 50 (GOLD) jobs.
     * @param _user Address of user whose badge to update.
     */
-    function _updateBadgeActivity(address _user) internal {
+    function _updateBadgeActivity(address _user) private {
         User memory user = users[_user];
         user.nbJobCompleted++;
 
@@ -210,7 +210,7 @@ contract SuperHelper {
     * Depreciation rate based on user's badge (1-5%).
     * @param _otherExpense Additional token expense required alongside depreciation.
     */
-    function _applyDepreciationIfNeeded(uint256 _otherExpense) internal {
+    function _applyDepreciationIfNeeded(uint256 _otherExpense) private {
         uint256 inactiveTime = block.timestamp - users[msg.sender].lastActivity;
         if (inactiveTime >= 30 days) {
             Badge badge = users[msg.sender].badgeLevel;
