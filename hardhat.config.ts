@@ -18,6 +18,10 @@ const config: HardhatUserConfig = {
   },
   defaultNetwork: "hardhat",
   networks: {
+    localhost: {
+      url: "http://127.0.0.1:8545",
+      chainId: 31337
+    },
     sepolia: {
       url: RPC_URL_SEPOLIA,
       chainId: 11155111,
