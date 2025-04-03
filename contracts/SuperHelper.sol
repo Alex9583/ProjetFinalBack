@@ -45,7 +45,7 @@ contract SuperHelper {
     uint256 public jobCount;
 
     event FirstRegistration(address newUser);
-    event JobAdded(address indexed creator, string description, uint price, uint id, bool isFinished);
+    event JobAdded(address indexed creator, string description, uint price, uint id);
     event JobTaken(address indexed worker, uint id);
     event JobIsCompletedAndPaid(address indexed creator, address indexed worker, uint id, uint pricePaid, uint stars);
     event JobIsCompletedButNotPaid(address indexed creator, address indexed worker, uint id, uint pricePaid, uint stars);
@@ -95,7 +95,9 @@ contract SuperHelper {
         require(helperToken.allowance(msg.sender, address(this)) >= _reward, InsufficientAllowance(_reward));
         helperToken.transferFrom(msg.sender, address(this), _reward);
 
-        jobs[jobCount] = Job({
+        uint256 jobId = jobCount;
+
+        jobs[jobId] = Job({
             creator: msg.sender,
             worker: address(0),
             description: _description,
@@ -106,6 +108,7 @@ contract SuperHelper {
 
         jobCount++;
         _updateActivity();
+        emit JobAdded(msg.sender, _description, _reward, jobId);
     }
 
     /**
