@@ -44,7 +44,7 @@ contract SuperHelper {
     mapping(uint256 => Job) public jobs;
     uint256 public jobCount;
 
-    event FirstRegistration(address newUser);
+    event FirstRegistration(address indexed newUser);
     event JobAdded(address indexed creator, string description, uint price, uint id);
     event JobTaken(address indexed worker, uint id);
     event JobIsCompletedAndPaid(address indexed creator, address indexed worker, uint id, uint pricePaid, uint stars);
