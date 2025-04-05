@@ -30,6 +30,25 @@ describe("SuperHelper Contract", function () {
         return {superHelper, helperToken, user1, user2, ONE_TOKEN};
     }
 
+    async function createAndDisputeJobFixture() {
+        const { superHelper, helperToken, owner, user1, user2 } = await loadFixture(deployContractsFixture);
+        const ONE_TOKEN = await helperToken.ONE_TOKEN();
+
+        const rewardAmount = 50n * ONE_TOKEN;
+
+        await superHelper.connect(user1).distributeToNewUser();
+        await superHelper.connect(user2).distributeToNewUser();
+
+        await helperToken.connect(user1).approve(await superHelper.getAddress(), rewardAmount);
+        await superHelper.connect(user1).createJob("Test Disputed Job", rewardAmount);
+
+        await superHelper.connect(user2).takeJob(0);
+
+        await superHelper.connect(user1).completeAndReviewJob(0, 2, true);
+
+        return { superHelper, helperToken, owner, user1, user2, rewardAmount };
+    }
+
     describe("User registration: distributeToNewUser", function () {
 
         it("Should register user correctly", async function () {
@@ -290,7 +309,7 @@ describe("SuperHelper Contract", function () {
                     await helperToken.connect(creator).approve(await superHelper.getAddress(), jobReward);
                     await superHelper.connect(creator).createJob("Quick job", jobReward);
                     await superHelper.connect(worker).takeJob(i);
-                    await superHelper.connect(creator).completeAndReviewJob(i, 3);
+                    await superHelper.connect(creator).completeAndReviewJob(i, 3, false);
                 }
 
                 const thirtyDays = 30 * 24 * 60 * 60;
@@ -476,8 +495,8 @@ describe("SuperHelper Contract", function () {
 
             await prepareAndTakeJob(superHelper, helperToken, creator, worker, reward);
 
-            await expect(superHelper.connect(creator).completeAndReviewJob(0, 5))
-                .to.emit(superHelper, "JobIsCompletedAndPaid")
+            await expect(superHelper.connect(creator).completeAndReviewJob(0, 5, false))
+                .to.emit(superHelper, "JobCompletedAndPaid")
                 .withArgs(creator.address, worker.address, 0, reward, 5);
 
             const job = await superHelper.jobs(0);
@@ -491,25 +510,25 @@ describe("SuperHelper Contract", function () {
             expect(userWorker.nbJobCompleted).to.equal(1);
         });
 
-        it("Should allow the creator to send a bad rate and to complete job successfully but the worker is not paid", async function () {
+        it("Should allow the creator to send a bad rate and marked the job as disputed", async function () {
             const {superHelper, helperToken, user1: creator, user2: worker} = await loadFixture(deployContractsFixture);
             const reward = 100n * await helperToken.ONE_TOKEN();
 
             await prepareAndTakeJob(superHelper, helperToken, creator, worker, reward);
 
-            await expect(superHelper.connect(creator).completeAndReviewJob(0, 1))
-                .to.emit(superHelper, "JobIsCompletedButNotPaid")
-                .withArgs(creator.address, worker.address, 0, reward, 1);
+            await expect(superHelper.connect(creator).completeAndReviewJob(0, 1, true))
+                .to.emit(superHelper, "JobDisputed")
+                .withArgs(creator.address, worker.address, 0);
 
             const job = await superHelper.jobs(0);
-            expect(job.status).to.equal(2); // COMPLETED
+            expect(job.status).to.equal(4); // Disputed
             expect(job.stars).to.equal(1);
 
             const workerBalance = await helperToken.balanceOf(worker.address);
             expect(workerBalance).to.be.equal(100n * await helperToken.ONE_TOKEN()); // 100 from registration
 
             const creatorBalance = await helperToken.balanceOf(creator.address);
-            expect(creatorBalance).to.be.equal(100n * await helperToken.ONE_TOKEN()); // 100 from reward unpaid
+            expect(creatorBalance).to.be.equal(0n); // 100 from registration - 100 locked in contract
 
             const userWorker = await superHelper.users(worker.address);
             expect(userWorker.nbJobCompleted).to.equal(0);
@@ -527,7 +546,7 @@ describe("SuperHelper Contract", function () {
 
             await prepareAndTakeJob(superHelper, helperToken, creator, worker, reward);
 
-            await expect(superHelper.connect(other).completeAndReviewJob(0, 4))
+            await expect(superHelper.connect(other).completeAndReviewJob(0, 4, false))
                 .to.be.revertedWith("You're not registered");
         });
 
@@ -540,7 +559,7 @@ describe("SuperHelper Contract", function () {
 
             await superHelper.connect(creator).createJob("Testing", reward);
 
-            await expect(superHelper.connect(creator).completeAndReviewJob(0, 3))
+            await expect(superHelper.connect(creator).completeAndReviewJob(0, 3, false))
                 .to.be.revertedWithCustomError(superHelper, "JobStatusIncorrect")
                 .withArgs(0, 1); // current.CREATED vs expected.TAKEN
         });
@@ -556,7 +575,7 @@ describe("SuperHelper Contract", function () {
             await superHelper.connect(creator).createJob("Testing", reward);
             await superHelper.connect(worker).takeJob(0);
 
-            await expect(superHelper.connect(worker).completeAndReviewJob(0, 3))
+            await expect(superHelper.connect(worker).completeAndReviewJob(0, 3, false))
                 .to.be.revertedWith("Only the creator can mark the job as complete and review it")
         });
 
@@ -571,7 +590,7 @@ describe("SuperHelper Contract", function () {
             await superHelper.connect(creator).createJob("Testing", reward);
             await superHelper.connect(worker).takeJob(0);
 
-            await expect(superHelper.connect(creator).completeAndReviewJob(0, 6))
+            await expect(superHelper.connect(creator).completeAndReviewJob(0, 6, false))
                 .to.be.revertedWith("The rate has to be between 0 and 5");
         });
     });
@@ -638,6 +657,81 @@ describe("SuperHelper Contract", function () {
                 .to.be.revertedWith("Only the creator can cancel the job");
         });
 
+    });
+
+    describe("Job Dispute Handling: handleDisputedJob", function () {
+
+        it("Should resolve dispute positively, rewarding worker", async function () {
+            const { superHelper, helperToken, owner, user1: creator, user2: worker, rewardAmount } = await loadFixture(createAndDisputeJobFixture);
+
+            const workerBalanceBefore = await helperToken.balanceOf(worker.address);
+
+            await expect(superHelper.connect(owner).handleDisputedJob(0, true))
+                .to.emit(superHelper, "JobCompletedAndPaid")
+                .withArgs(
+                    creator.address,
+                    worker.address,
+                    0,
+                    rewardAmount,
+                    2
+                );
+
+            const jobAfter = await superHelper.jobs(0);
+            expect(jobAfter.status).to.equal(2); // COMPLETED
+
+            const workerBalanceAfter = await helperToken.balanceOf(worker.address);
+            expect(workerBalanceAfter).to.equal(workerBalanceBefore + rewardAmount);
+
+            const userWorker = await superHelper.users(worker.address);
+            expect(userWorker.nbJobCompleted).to.equal(1);
+        });
+
+        it("Should resolve dispute negatively, refunding creator", async function () {
+            const { superHelper, helperToken, owner, user1: creator, user2: worker, rewardAmount } = await loadFixture(createAndDisputeJobFixture);
+
+            const creatorBalanceBefore = await helperToken.balanceOf(creator.address);
+
+            await expect(superHelper.connect(owner).handleDisputedJob(0, false))
+                .to.emit(superHelper, "JobCompletedButNotPaid")
+                .withArgs(
+                    creator.address,
+                    worker.address,
+                    0,
+                    rewardAmount,
+                    2
+                );
+
+            const jobAfter = await superHelper.jobs(0);
+            expect(jobAfter.status).to.equal(2); // COMPLETED
+
+            const creatorBalanceAfter = await helperToken.balanceOf(creator.address);
+            expect(creatorBalanceAfter).to.equal(creatorBalanceBefore + rewardAmount);
+
+            const userWorker = await superHelper.users(worker.address);
+            expect(userWorker.nbJobCompleted).to.equal(0);
+        });
+
+        it("Should revert if called by non-owner", async function () {
+            const { superHelper, user1 } = await loadFixture(createAndDisputeJobFixture);
+
+            await expect(superHelper.connect(user1).handleDisputedJob(0, true))
+                .to.be.revertedWithCustomError(superHelper, "OwnableUnauthorizedAccount")
+                .withArgs(user1.address);
+        });
+
+        it("Should fail if job is not disputed", async function () {
+            const { superHelper, helperToken, owner, user1 } = await loadFixture(deployContractsFixture);
+            const ONE_TOKEN = await helperToken.ONE_TOKEN();
+            const rewardAmount = 50n * ONE_TOKEN;
+
+            await superHelper.connect(user1).distributeToNewUser();
+            await helperToken.connect(user1).approve(await superHelper.getAddress(), rewardAmount);
+            await superHelper.connect(user1).createJob("Test Job Not Disputed", rewardAmount);
+
+            await expect(superHelper.connect(owner).handleDisputedJob(0, true))
+                .to.be.revertedWithCustomError(superHelper, "JobStatusIncorrect")
+                .withArgs(0, 4); // current.CREATED vs expected.Disputed
+        });
     });
 });
 
