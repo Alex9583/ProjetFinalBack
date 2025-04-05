@@ -58,7 +58,7 @@ Example network names:
 
 | File              | % Stmts | % Branch  | % Funcs | % Lines | Uncovered Lines |
 |-------------------|---------|-----------|---------|---------|-----------------|
-| contracts/        | 100     | 92.31     | 100     | 100     |                 |
+| contracts/        | 100     | 93.1     | 100     | 100     |                 |
 | HelperToken.sol   | 100     | 100       | 100     | 100     |                 |
-| SuperHelper.sol   | 100     | 92.31     | 100     | 100     |                 |
-| **All files**     | **100** | **92.31** | **100** | **100** |                 |
+| SuperHelper.sol   | 100     | 93.1     | 100     | 100     |                 |
+| **All files**     | **100** | **93.1** | **100** | **100** |                 |

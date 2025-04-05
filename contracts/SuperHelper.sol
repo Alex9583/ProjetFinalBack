@@ -1,20 +1,24 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
+import "@openzeppelin/contracts/access/Ownable.sol";
+
 import {HelperToken} from "./HelperToken.sol";
 
 /*
  * @title Contract for managing jobs and user rewards with HelperToken
  * @notice Allows registered users to create, accept, complete, and rate paid jobs
+ * @dev The contract uses OpenZeppelin's Ownable for access control functionality.
  */
-contract SuperHelper {
+contract SuperHelper is Ownable {
     HelperToken public helperToken;
 
     enum JobStatus {
         CREATED,
         TAKEN,
         COMPLETED,
-        CANCELLED
+        CANCELLED,
+        DISPUTED
     }
 
     enum Badge {
@@ -45,17 +49,18 @@ contract SuperHelper {
     uint256 public jobCount;
 
     event FirstRegistration(address indexed newUser);
-    event JobAdded(address indexed creator, string description, uint price, uint id);
-    event JobTaken(address indexed worker, uint id);
-    event JobIsCompletedAndPaid(address indexed creator, address indexed worker, uint id, uint pricePaid, uint stars);
-    event JobIsCompletedButNotPaid(address indexed creator, address indexed worker, uint id, uint pricePaid, uint stars);
-    event JobCanceled(address indexed creator, uint id);
+    event JobAdded(address indexed creator, string description, uint256 price, uint256 id);
+    event JobTaken(address indexed worker, uint256 id);
+    event JobCompletedAndPaid(address indexed creator, address indexed worker, uint256 id, uint256 pricePaid, uint8 stars);
+    event JobCompletedButNotPaid(address indexed creator, address indexed worker, uint256 id, uint256 pricePaid, uint8 stars);
+    event JobCanceled(address indexed creator, uint256 id);
+    event JobDisputed(address indexed creator, address indexed worker, uint256 id);
 
     error InsufficientAllowance(uint256 required);
     error InsufficientFunds(uint256 required);
     error JobStatusIncorrect(JobStatus current, JobStatus expected);
 
-    constructor() {
+    constructor() Ownable(msg.sender) {
         helperToken = new HelperToken();
     }
 
@@ -117,46 +122,43 @@ contract SuperHelper {
     * @param _jobId ID of the job to take.
     */
     function takeJob(uint256 _jobId) external onlyRegisteredUser {
-        Job memory job = jobs[_jobId];
+        Job storage job = jobs[_jobId];
         require(job.status == JobStatus.CREATED, JobStatusIncorrect(job.status, JobStatus.CREATED));
         require(job.creator != msg.sender, "Worker can't be the creator");
         _applyDepreciationIfNeeded(0);
 
         job.worker = msg.sender;
         job.status = JobStatus.TAKEN;
-        jobs[_jobId] = job;
         _updateActivity();
 
         emit JobTaken(msg.sender, _jobId);
     }
 
     /**
-    * @notice Marks a job as completed, sets rating from creator, and manages reward payment.
-    * Transfers reward to worker if job rating is above 2, otherwise refunds the creator.
-    * Updates activity and potentially badge status of the worker.
+    * @notice Marks a job as completed, sets the rating from creator, and manages reward payment.
+    * If the job is disputed, changes status to DISPUTED and do not pay the worker.
     * @param _jobId ID of the job to complete and review.
-    * @param _rating Rating (0-5) provided by the job creator to the worker.
+    * @param _rating Rating (from 0 to 5 inclusive) provided by the job creator to the worker.
+    * @param _isDisputed Boolean flag indicating if the job is disputed. If true, sets job status to DISPUTED.
     */
-    function completeAndReviewJob(uint256 _jobId, uint8 _rating) external onlyRegisteredUser {
-        Job memory job = jobs[_jobId];
+    function completeAndReviewJob(uint256 _jobId, uint8 _rating, bool _isDisputed) external onlyRegisteredUser {
+        Job storage job = jobs[_jobId];
         require(msg.sender == job.creator, "Only the creator can mark the job as complete and review it");
         require(job.status == JobStatus.TAKEN, JobStatusIncorrect(job.status, JobStatus.TAKEN));
         require(_rating >= 0 && _rating <= 5, "The rate has to be between 0 and 5");
         _applyDepreciationIfNeeded(0);
 
         job.stars = _rating;
-        job.status = JobStatus.COMPLETED;
         _updateActivity();
 
-        if (_rating > 2) {
-            helperToken.transfer(job.worker, job.reward);
-            jobs[_jobId] = job;
-            _updateBadgeActivity(job.worker);
-            emit JobIsCompletedAndPaid(job.creator, job.worker, _jobId, job.reward, _rating);
+        if (_isDisputed) {
+            job.status = JobStatus.DISPUTED;
+            emit JobDisputed(job.creator, job.worker, _jobId);
         } else {
-            helperToken.transfer(job.creator, job.reward);
-            jobs[_jobId] = job;
-            emit JobIsCompletedButNotPaid(job.creator, job.worker, _jobId, job.reward, _rating);
+            job.status = JobStatus.COMPLETED;
+            _updateBadgeActivity(job.worker);
+            helperToken.transfer(job.worker, job.reward);
+            emit JobCompletedAndPaid(job.creator, job.worker, _jobId, job.reward, _rating);
         }
     }
 
@@ -166,7 +168,7 @@ contract SuperHelper {
     * @param _jobId ID of the job to cancel.
     */
     function cancelJob(uint256 _jobId) external onlyRegisteredUser {
-        Job memory job = jobs[_jobId];
+        Job storage job = jobs[_jobId];
 
         require(msg.sender == job.creator, "Only the creator can cancel the job");
         require(job.status == JobStatus.CREATED, JobStatusIncorrect(job.status, JobStatus.CREATED));
@@ -174,9 +176,31 @@ contract SuperHelper {
 
         job.status = JobStatus.CANCELLED;
         helperToken.transfer(job.creator, job.reward);
-        jobs[_jobId] = job;
         _updateActivity();
         emit JobCanceled(msg.sender, _jobId);
+    }
+
+    /**
+    * @notice Handles a disputed job by resolving its status and managing the reward transfer accordingly.
+    * Only callable by the contract owner
+    * @param _jobId ID of the disputed job to handle.
+    * @param _isResolved Boolean flag indicating the resolution outcome. If true, rewards the worker; if false, refunds the creator.
+    */
+    function handleDisputedJob(uint256 _jobId, bool _isResolved) external onlyOwner {
+        Job storage job = jobs[_jobId];
+
+        require(job.status == JobStatus.DISPUTED, JobStatusIncorrect(job.status, JobStatus.DISPUTED));
+
+        if (_isResolved) {
+            job.status = JobStatus.COMPLETED;
+            _updateBadgeActivity(job.worker);
+            helperToken.transfer(job.worker, job.reward);
+            emit JobCompletedAndPaid(job.creator, job.worker, _jobId, job.reward, job.stars);
+        } else {
+            job.status = JobStatus.COMPLETED;
+            helperToken.transfer(job.creator, job.reward);
+            emit JobCompletedButNotPaid(job.creator, job.worker, _jobId, job.reward, job.stars);
+        }
     }
 
 
@@ -194,7 +218,7 @@ contract SuperHelper {
     * @param _user Address of user whose badge to update.
     */
     function _updateBadgeActivity(address _user) private {
-        User memory user = users[_user];
+        User storage user = users[_user];
         user.nbJobCompleted++;
 
         if (user.nbJobCompleted == 10) {
@@ -204,8 +228,6 @@ contract SuperHelper {
         } else if (user.nbJobCompleted == 50) {
             user.badgeLevel = Badge.GOLD;
         }
-
-        users[_user] = user;
     }
 
     /**
