@@ -17,25 +17,29 @@ describe("SuperHelper Contract", function () {
     }
 
     async function deployAndPrepareDepreciationFixture() {
-        const {superHelper, helperToken, user1, user2} = await loadFixture(deployContractsFixture);
+        const {superHelper, helperToken,owner,  user1, user2} = await loadFixture(deployContractsFixture);
         const ONE_TOKEN = await helperToken.ONE_TOKEN();
 
+        await superHelper.connect(owner).confirmKYCForUser(user1.address);
+        await superHelper.connect(owner).confirmKYCForUser(user2.address);
         await superHelper.connect(user1).distributeToNewUser();
         await superHelper.connect(user2).distributeToNewUser();
 
-        const thirtyDays = 30 * 24 * 60 * 60;
+        const ninetyDays = 90 * 24 * 60 * 60;
         const userDataBefore = await superHelper.users(user1.address);
-        await time.increaseTo(userDataBefore.lastActivity + BigInt(thirtyDays));
+        await time.increaseTo(userDataBefore.lastActivity + BigInt(ninetyDays));
 
         return {superHelper, helperToken, user1, user2, ONE_TOKEN};
     }
 
     async function createAndDisputeJobFixture() {
-        const { superHelper, helperToken, owner, user1, user2 } = await loadFixture(deployContractsFixture);
+        const {superHelper, helperToken, owner, user1, user2} = await loadFixture(deployContractsFixture);
         const ONE_TOKEN = await helperToken.ONE_TOKEN();
 
         const rewardAmount = 50n * ONE_TOKEN;
 
+        await superHelper.connect(owner).confirmKYCForUser(user1.address);
+        await superHelper.connect(owner).confirmKYCForUser(user2.address);
         await superHelper.connect(user1).distributeToNewUser();
         await superHelper.connect(user2).distributeToNewUser();
 
@@ -46,14 +50,43 @@ describe("SuperHelper Contract", function () {
 
         await superHelper.connect(user1).completeAndReviewJob(0, 2, true);
 
-        return { superHelper, helperToken, owner, user1, user2, rewardAmount };
+        return {superHelper, helperToken, owner, user1, user2, rewardAmount};
     }
+
+    describe("User registration: confirmKYCForUser", function () {
+        it("Should confirm KYC for user", async function () {
+            const {superHelper, owner, user1} = await loadFixture(deployContractsFixture);
+
+            await superHelper.connect(owner).confirmKYCForUser(user1.address);
+
+            const userData = await superHelper.users(user1.address);
+            expect(userData.isKYCDone).to.be.true;
+        });
+
+        it("Should revert if user already confirmed KYC", async function () {
+            const {superHelper, owner, user1} = await loadFixture(deployContractsFixture);
+
+            await superHelper.connect(owner).confirmKYCForUser(user1.address);
+
+            await expect(superHelper.connect(owner).confirmKYCForUser(user1.address))
+                .to.be.revertedWith("This user is already KYC verified");
+        });
+
+        it("Should revert if called by non-owner", async function () {
+            const {superHelper, user1} = await loadFixture(createAndDisputeJobFixture);
+
+            await expect(superHelper.connect(user1).confirmKYCForUser(user1.address))
+                .to.be.revertedWithCustomError(superHelper, "OwnableUnauthorizedAccount")
+                .withArgs(user1.address);
+        });
+    });
 
     describe("User registration: distributeToNewUser", function () {
 
         it("Should register user correctly", async function () {
-            const {superHelper, helperToken, user1} = await loadFixture(deployContractsFixture);
+            const {superHelper, helperToken, owner, user1} = await loadFixture(deployContractsFixture);
 
+            await superHelper.connect(owner).confirmKYCForUser(user1.address);
             await superHelper.connect(user1).distributeToNewUser();
 
             const userData = await superHelper.users(user1.address);
@@ -64,7 +97,9 @@ describe("SuperHelper Contract", function () {
         });
 
         it("Should emit event on user's first registration", async function () {
-            const {superHelper, user1} = await loadFixture(deployContractsFixture);
+            const {superHelper, owner, user1} = await loadFixture(deployContractsFixture);
+
+            await superHelper.connect(owner).confirmKYCForUser(user1.address);
 
             await expect(superHelper.connect(user1).distributeToNewUser())
                 .to.emit(superHelper, "FirstRegistration")
@@ -72,7 +107,9 @@ describe("SuperHelper Contract", function () {
         });
 
         it("Should fail if user already registered", async function () {
-            const {superHelper, user1} = await loadFixture(deployContractsFixture);
+            const {superHelper, owner, user1} = await loadFixture(deployContractsFixture);
+
+            await superHelper.connect(owner).confirmKYCForUser(user1.address);
 
             await superHelper.connect(user1).distributeToNewUser();
 
@@ -80,14 +117,22 @@ describe("SuperHelper Contract", function () {
                 .to.be.revertedWith("This user is already registered");
         });
 
+        it("Should fail if user has not done his KYC", async function () {
+            const {superHelper, user1} = await loadFixture(deployContractsFixture);
+
+            await expect(superHelper.connect(user1).distributeToNewUser())
+                .to.be.revertedWith("Your KYC is not done");
+        });
+
     });
 
     describe("Job Creation: createJob", function () {
 
         it("Should successfully create a job", async function () {
-            const {superHelper, helperToken, user1} = await loadFixture(deployContractsFixture);
+            const {superHelper, helperToken, owner, user1} = await loadFixture(deployContractsFixture);
             const reward = 100n * await helperToken.ONE_TOKEN();
 
+            await superHelper.connect(owner).confirmKYCForUser(user1.address);
             await superHelper.connect(user1).distributeToNewUser();
 
             await helperToken.connect(user1).approve(await superHelper.getAddress(), reward);
@@ -102,9 +147,10 @@ describe("SuperHelper Contract", function () {
         });
 
         it("Should update last activity time after creating job", async function () {
-            const {superHelper, helperToken, user1} = await loadFixture(deployContractsFixture);
+            const {superHelper, helperToken, owner, user1} = await loadFixture(deployContractsFixture);
             const reward = 100n * await helperToken.ONE_TOKEN();
 
+            await superHelper.connect(owner).confirmKYCForUser(user1.address);
             await superHelper.connect(user1).distributeToNewUser();
 
             const lastActivity = (await superHelper.users(user1.address)).lastActivity;
@@ -128,9 +174,10 @@ describe("SuperHelper Contract", function () {
         });
 
         it("Should revert job creation if insufficient allowance", async function () {
-            const {superHelper, helperToken, user1} = await loadFixture(deployContractsFixture);
+            const {superHelper, helperToken, owner, user1} = await loadFixture(deployContractsFixture);
             const reward = 50n * await helperToken.ONE_TOKEN();
 
+            await superHelper.connect(owner).confirmKYCForUser(user1.address);
             await superHelper.connect(user1).distributeToNewUser();
 
             await expect(superHelper.connect(user1).createJob("No Allowance Job", reward))
@@ -138,12 +185,13 @@ describe("SuperHelper Contract", function () {
         });
 
         it("Should revert job creation if user's balance is insufficient", async function () {
-            const {superHelper, helperToken, user1} = await loadFixture(deployContractsFixture);
+            const {superHelper, helperToken, owner, user1} = await loadFixture(deployContractsFixture);
             const ONE_TOKEN = await helperToken.ONE_TOKEN();
 
             const initialReward = 100n * ONE_TOKEN;
             const insufficientReward = 101n * ONE_TOKEN;
 
+            await superHelper.connect(owner).confirmKYCForUser(user1.address);
             await superHelper.connect(user1).distributeToNewUser();
 
             await helperToken.connect(user1).approve(await superHelper.getAddress(), initialReward);
@@ -153,7 +201,7 @@ describe("SuperHelper Contract", function () {
                 .withArgs(insufficientReward);
         });
 
-        describe("Job Creation with Depreciation (Inactivity >= 30 days)", function () {
+        describe("Job Creation with Depreciation (Inactivity >= 90 days)", function () {
 
             it("Should successfully transfer depreciation amount AND create job", async function () {
                 const {
@@ -213,12 +261,14 @@ describe("SuperHelper Contract", function () {
                 } = await loadFixture(deployAndPrepareDepreciationFixture);
 
                 const jobReward = 10n * ONE_TOKEN;
+                const depreciationAmount = (100n * ONE_TOKEN * 5n) / 100n; // 500n
 
                 await helperToken.connect(user1).approve(await superHelper.getAddress(), jobReward);
 
                 await expect(
                     superHelper.connect(user1).createJob("Job should fail due to depreciation allowance", jobReward)
-                ).to.be.revertedWithCustomError(superHelper, "InsufficientAllowance");
+                ).to.be.revertedWithCustomError(superHelper, "InsufficientAllowance")
+                    .withArgs(jobReward + depreciationAmount);
             });
 
         });
@@ -229,9 +279,11 @@ describe("SuperHelper Contract", function () {
     describe("Take Job: takeJob", function () {
 
         it("Should allow a registered user to take a job", async function () {
-            const {superHelper, helperToken, user1, user2} = await loadFixture(deployContractsFixture);
+            const {superHelper, helperToken, owner, user1, user2} = await loadFixture(deployContractsFixture);
             const reward = 100n * await helperToken.ONE_TOKEN();
 
+            await superHelper.connect(owner).confirmKYCForUser(user1.address);
+            await superHelper.connect(owner).confirmKYCForUser(user2.address);
             await superHelper.connect(user1).distributeToNewUser();
             await superHelper.connect(user2).distributeToNewUser();
 
@@ -253,9 +305,12 @@ describe("SuperHelper Contract", function () {
         });
 
         it("Should revert taking a job if already taken", async function () {
-            const {superHelper, helperToken, user1, user2, other} = await loadFixture(deployContractsFixture);
+            const {superHelper, helperToken, owner, user1, user2, other} = await loadFixture(deployContractsFixture);
             const reward = 100n * await helperToken.ONE_TOKEN();
 
+            await superHelper.connect(owner).confirmKYCForUser(user1.address);
+            await superHelper.connect(owner).confirmKYCForUser(user2.address);
+            await superHelper.connect(owner).confirmKYCForUser(other.address);
             await superHelper.connect(user1).distributeToNewUser();
             await superHelper.connect(user2).distributeToNewUser();
             await superHelper.connect(other).distributeToNewUser();
@@ -269,9 +324,10 @@ describe("SuperHelper Contract", function () {
         });
 
         it("Should revert if the job creator take his job", async function () {
-            const {superHelper, helperToken, user1} = await loadFixture(deployContractsFixture);
+            const {superHelper, helperToken, owner, user1} = await loadFixture(deployContractsFixture);
             const reward = 100n * await helperToken.ONE_TOKEN();
 
+            await superHelper.connect(owner).confirmKYCForUser(user1.address);
             await superHelper.connect(user1).distributeToNewUser();
 
             await helperToken.connect(user1).approve(await superHelper.getAddress(), reward);
@@ -280,7 +336,7 @@ describe("SuperHelper Contract", function () {
             await expect(superHelper.connect(user1).takeJob(0)).to.be.revertedWith("Worker can't be the creator");
         });
 
-        describe("Take job with Depreciation (Inactivity >= 30 days)", function () {
+        describe("Take job with Depreciation (Inactivity >= 90 days)", function () {
 
             async function prepareToTakeJob(superHelper: any, helperToken: any, creator: any, reward: bigint, depreciationAmount: bigint) {
                 await helperToken.connect(creator).approve(
@@ -295,6 +351,7 @@ describe("SuperHelper Contract", function () {
                 const {
                     superHelper,
                     helperToken,
+                    owner,
                     user1: creator,
                     user2: worker,
                 } = await loadFixture(deployContractsFixture);
@@ -302,6 +359,8 @@ describe("SuperHelper Contract", function () {
                 const ONE_TOKEN = await helperToken.ONE_TOKEN();
                 const jobReward = 1n * ONE_TOKEN;
 
+                await superHelper.connect(owner).confirmKYCForUser(creator.address);
+                await superHelper.connect(owner).confirmKYCForUser(worker.address);
                 await superHelper.connect(creator).distributeToNewUser();
                 await superHelper.connect(worker).distributeToNewUser();
 
@@ -312,9 +371,9 @@ describe("SuperHelper Contract", function () {
                     await superHelper.connect(creator).completeAndReviewJob(i, 3, false);
                 }
 
-                const thirtyDays = 30 * 24 * 60 * 60;
+                const ninetyDays = 90 * 24 * 60 * 60;
                 const userDataBefore = await superHelper.users(creator.address);
-                await time.increaseTo(userDataBefore.lastActivity + BigInt(thirtyDays));
+                await time.increaseTo(userDataBefore.lastActivity + BigInt(ninetyDays));
                 return {
                     superHelper,
                     helperToken,
@@ -480,7 +539,9 @@ describe("SuperHelper Contract", function () {
 
     describe("Complete and Review Job: completeAndReviewJob", function () {
 
-        async function prepareAndTakeJob(superHelper: any, helperToken: any, creator: any, worker: any, reward: bigint) {
+        async function prepareAndTakeJob(superHelper: any, helperToken: any, owner: any, creator: any, worker: any, reward: bigint) {
+            await superHelper.connect(owner).confirmKYCForUser(creator.address);
+            await superHelper.connect(owner).confirmKYCForUser(worker.address);
             await superHelper.connect(creator).distributeToNewUser();
             await superHelper.connect(worker).distributeToNewUser();
 
@@ -490,10 +551,10 @@ describe("SuperHelper Contract", function () {
         }
 
         it("Should allow worker to complete job successfully and get paid", async function () {
-            const {superHelper, helperToken, user1: creator, user2: worker} = await loadFixture(deployContractsFixture);
+            const {superHelper, helperToken, owner, user1: creator, user2: worker} = await loadFixture(deployContractsFixture);
             const reward = 100n * await helperToken.ONE_TOKEN();
 
-            await prepareAndTakeJob(superHelper, helperToken, creator, worker, reward);
+            await prepareAndTakeJob(superHelper, helperToken, owner, creator, worker, reward);
 
             await expect(superHelper.connect(creator).completeAndReviewJob(0, 5, false))
                 .to.emit(superHelper, "JobCompletedAndPaid")
@@ -511,10 +572,10 @@ describe("SuperHelper Contract", function () {
         });
 
         it("Should allow the creator to send a bad rate and marked the job as disputed", async function () {
-            const {superHelper, helperToken, user1: creator, user2: worker} = await loadFixture(deployContractsFixture);
+            const {superHelper, helperToken, owner, user1: creator, user2: worker} = await loadFixture(deployContractsFixture);
             const reward = 100n * await helperToken.ONE_TOKEN();
 
-            await prepareAndTakeJob(superHelper, helperToken, creator, worker, reward);
+            await prepareAndTakeJob(superHelper, helperToken, owner, creator, worker, reward);
 
             await expect(superHelper.connect(creator).completeAndReviewJob(0, 1, true))
                 .to.emit(superHelper, "JobDisputed")
@@ -538,22 +599,24 @@ describe("SuperHelper Contract", function () {
             const {
                 superHelper,
                 helperToken,
+                owner,
                 user1: creator,
                 user2: worker,
                 other
             } = await loadFixture(deployContractsFixture);
             const reward = 80n * await helperToken.ONE_TOKEN();
 
-            await prepareAndTakeJob(superHelper, helperToken, creator, worker, reward);
+            await prepareAndTakeJob(superHelper, helperToken, owner, creator, worker, reward);
 
             await expect(superHelper.connect(other).completeAndReviewJob(0, 4, false))
                 .to.be.revertedWith("You're not registered");
         });
 
         it("Should revert if job is not in TAKEN status", async function () {
-            const {superHelper, helperToken, user1: creator} = await loadFixture(deployContractsFixture);
+            const {superHelper, helperToken, owner, user1: creator} = await loadFixture(deployContractsFixture);
             const reward = 50n * await helperToken.ONE_TOKEN();
 
+            await superHelper.connect(owner).confirmKYCForUser(creator.address);
             await superHelper.connect(creator).distributeToNewUser();
             await helperToken.connect(creator).approve(await superHelper.getAddress(), reward);
 
@@ -565,9 +628,11 @@ describe("SuperHelper Contract", function () {
         });
 
         it("Should revert if called by another address than the creator", async function () {
-            const {superHelper, helperToken, user1: creator, user2: worker} = await loadFixture(deployContractsFixture);
+            const {superHelper, helperToken, owner, user1: creator, user2: worker} = await loadFixture(deployContractsFixture);
             const reward = 50n * await helperToken.ONE_TOKEN();
 
+            await superHelper.connect(owner).confirmKYCForUser(creator.address);
+            await superHelper.connect(owner).confirmKYCForUser(worker.address);
             await superHelper.connect(creator).distributeToNewUser();
             await superHelper.connect(worker).distributeToNewUser();
             await helperToken.connect(creator).approve(await superHelper.getAddress(), reward);
@@ -580,9 +645,11 @@ describe("SuperHelper Contract", function () {
         });
 
         it("Should revert if called by another address than the creator", async function () {
-            const {superHelper, helperToken, user1: creator, user2: worker} = await loadFixture(deployContractsFixture);
+            const {superHelper, helperToken, owner, user1: creator, user2: worker} = await loadFixture(deployContractsFixture);
             const reward = 50n * await helperToken.ONE_TOKEN();
 
+            await superHelper.connect(owner).confirmKYCForUser(creator.address);
+            await superHelper.connect(owner).confirmKYCForUser(worker.address);
             await superHelper.connect(creator).distributeToNewUser();
             await superHelper.connect(worker).distributeToNewUser();
             await helperToken.connect(creator).approve(await superHelper.getAddress(), reward);
@@ -597,13 +664,16 @@ describe("SuperHelper Contract", function () {
 
     describe("Cancel Job: cancelJob", function () {
 
-        async function prepareJobWithoutTaking(superHelper: any, helperToken: any, creator: any, reward: bigint) {
+        async function prepareJobWithoutTaking(superHelper: any, helperToken: any, owner: any, creator: any, reward: bigint) {
+            await superHelper.connect(owner).confirmKYCForUser(creator.address);
             await superHelper.connect(creator).distributeToNewUser();
             await helperToken.connect(creator).approve(await superHelper.getAddress(), reward);
             await superHelper.connect(creator).createJob("Cancel Job Test", reward);
         }
 
-        async function prepareAndTakeJob(superHelper: any, helperToken: any, creator: any, worker: any, reward: bigint) {
+        async function prepareAndTakeJob(superHelper: any, helperToken: any, owner: any, creator: any, worker: any, reward: bigint) {
+            await superHelper.connect(owner).confirmKYCForUser(creator.address);
+            await superHelper.connect(owner).confirmKYCForUser(worker.address);
             await superHelper.connect(creator).distributeToNewUser();
             await superHelper.connect(worker).distributeToNewUser();
 
@@ -613,10 +683,10 @@ describe("SuperHelper Contract", function () {
         }
 
         it("Should allow job creator to cancel job if not yet taken", async function () {
-            const {superHelper, helperToken, user1: creator} = await loadFixture(deployContractsFixture);
+            const {superHelper, helperToken, owner, user1: creator} = await loadFixture(deployContractsFixture);
             const reward = 100n * await helperToken.ONE_TOKEN();
 
-            await prepareJobWithoutTaking(superHelper, helperToken, creator, reward);
+            await prepareJobWithoutTaking(superHelper, helperToken, owner, creator, reward);
 
             await expect(superHelper.connect(creator).cancelJob(0))
                 .to.emit(superHelper, "JobCanceled")
@@ -633,12 +703,13 @@ describe("SuperHelper Contract", function () {
             const {
                 superHelper,
                 helperToken,
+                owner,
                 user1: creator,
                 user2: worker
             } = await loadFixture(deployContractsFixture);
             const reward = 100n * await helperToken.ONE_TOKEN();
 
-            await prepareAndTakeJob(superHelper, helperToken, creator, worker, reward);
+            await prepareAndTakeJob(superHelper, helperToken, owner, creator, worker, reward);
 
             await expect(superHelper.connect(creator).cancelJob(0))
                 .to.be.revertedWithCustomError(superHelper, "JobStatusIncorrect")
@@ -646,11 +717,12 @@ describe("SuperHelper Contract", function () {
         });
 
         it("Should revert cancellation if user is not creator of the job", async function () {
-            const {superHelper, helperToken, user1: creator, other} = await loadFixture(deployContractsFixture);
+            const {superHelper, helperToken, owner, user1: creator, other} = await loadFixture(deployContractsFixture);
             const reward = 70n * await helperToken.ONE_TOKEN();
 
-            await prepareJobWithoutTaking(superHelper, helperToken, creator, reward);
+            await prepareJobWithoutTaking(superHelper, helperToken, owner, creator, reward);
 
+            await superHelper.connect(owner).confirmKYCForUser(other.address);
             await superHelper.connect(other).distributeToNewUser();
 
             await expect(superHelper.connect(other).cancelJob(0))
@@ -662,7 +734,14 @@ describe("SuperHelper Contract", function () {
     describe("Job Dispute Handling: handleDisputedJob", function () {
 
         it("Should resolve dispute positively, rewarding worker", async function () {
-            const { superHelper, helperToken, owner, user1: creator, user2: worker, rewardAmount } = await loadFixture(createAndDisputeJobFixture);
+            const {
+                superHelper,
+                helperToken,
+                owner,
+                user1: creator,
+                user2: worker,
+                rewardAmount
+            } = await loadFixture(createAndDisputeJobFixture);
 
             const workerBalanceBefore = await helperToken.balanceOf(worker.address);
 
@@ -687,7 +766,14 @@ describe("SuperHelper Contract", function () {
         });
 
         it("Should resolve dispute negatively, refunding creator", async function () {
-            const { superHelper, helperToken, owner, user1: creator, user2: worker, rewardAmount } = await loadFixture(createAndDisputeJobFixture);
+            const {
+                superHelper,
+                helperToken,
+                owner,
+                user1: creator,
+                user2: worker,
+                rewardAmount
+            } = await loadFixture(createAndDisputeJobFixture);
 
             const creatorBalanceBefore = await helperToken.balanceOf(creator.address);
 
@@ -712,7 +798,7 @@ describe("SuperHelper Contract", function () {
         });
 
         it("Should revert if called by non-owner", async function () {
-            const { superHelper, user1 } = await loadFixture(createAndDisputeJobFixture);
+            const {superHelper, user1} = await loadFixture(createAndDisputeJobFixture);
 
             await expect(superHelper.connect(user1).handleDisputedJob(0, true))
                 .to.be.revertedWithCustomError(superHelper, "OwnableUnauthorizedAccount")
@@ -720,10 +806,11 @@ describe("SuperHelper Contract", function () {
         });
 
         it("Should fail if job is not disputed", async function () {
-            const { superHelper, helperToken, owner, user1 } = await loadFixture(deployContractsFixture);
+            const {superHelper, helperToken, owner, user1} = await loadFixture(deployContractsFixture);
             const ONE_TOKEN = await helperToken.ONE_TOKEN();
             const rewardAmount = 50n * ONE_TOKEN;
 
+            await superHelper.connect(owner).confirmKYCForUser(user1.address);
             await superHelper.connect(user1).distributeToNewUser();
             await helperToken.connect(user1).approve(await superHelper.getAddress(), rewardAmount);
             await superHelper.connect(user1).createJob("Test Job Not Disputed", rewardAmount);

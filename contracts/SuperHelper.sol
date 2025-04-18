@@ -42,6 +42,7 @@ contract SuperHelper is Ownable {
         uint256 nbJobCompleted;
         Badge badgeLevel;
         bool isRegistered;
+        bool isKYCDone;
     }
 
     mapping(address => User) public users;
@@ -65,6 +66,14 @@ contract SuperHelper is Ownable {
     }
 
     /**
+     * @dev Modifier to ensure only KYC users can get first registration's token.
+     */
+    modifier onlyKYCUser() {
+        require(users[msg.sender].isKYCDone, "Your KYC is not done");
+        _;
+    }
+
+    /**
      * @dev Modifier to ensure only registered users perform certain actions.
      */
     modifier onlyRegisteredUser() {
@@ -73,15 +82,27 @@ contract SuperHelper is Ownable {
     }
 
     /**
+     * @notice Confirms the KYC status for a given user.
+     * @dev Can only be called by the contract owner.
+     * Marks the specified user's KYC as completed, preventing registration abuse for tokens.
+     * @param _newUserAddress The address of the user whose KYC status is being confirmed.
+     */
+    function confirmKYCForUser(address _newUserAddress) external onlyOwner {
+        require(!users[_newUserAddress].isKYCDone, "This user is already KYC verified");
+        users[_newUserAddress].isKYCDone = true;
+    }
+
+    /**
     * @notice Registers a new user and transfers initial tokens from the contract.
-    * Checks if the user is not already registered and if the contract has sufficient funds.
+    * Checks if the user has done the KYC, he is not already registered and if the contract has sufficient funds.
     * Emits an event upon successful first registration.
     */
-    function distributeToNewUser() external {
+    function distributeToNewUser() external onlyKYCUser {
         require(helperToken.balanceOf(address(this)) >= 100 * helperToken.ONE_TOKEN(), "Not enough funds in the contract");
         require(!users[msg.sender].isRegistered, "This user is already registered");
 
-        users[msg.sender] = User(block.timestamp, 0, Badge.NONE, true);
+        users[msg.sender].lastActivity = block.timestamp;
+        users[msg.sender].isRegistered = true;
         helperToken.transfer(msg.sender, 100 * helperToken.ONE_TOKEN());
 
         emit FirstRegistration(msg.sender);
@@ -95,7 +116,7 @@ contract SuperHelper is Ownable {
     * @param _reward Amount offered as reward for job completion.
     */
     function createJob(string memory _description, uint256 _reward) external onlyRegisteredUser {
-        _applyDepreciationIfNeeded(0);
+        _applyDepreciationIfNeeded(_reward);
         require(helperToken.balanceOf(msg.sender) >= _reward, InsufficientFunds(_reward));
         require(helperToken.allowance(msg.sender, address(this)) >= _reward, InsufficientAllowance(_reward));
         helperToken.transferFrom(msg.sender, address(this), _reward);
@@ -237,7 +258,7 @@ contract SuperHelper is Ownable {
     */
     function _applyDepreciationIfNeeded(uint256 _otherExpense) private {
         uint256 inactiveTime = block.timestamp - users[msg.sender].lastActivity;
-        if (inactiveTime >= 30 days) {
+        if (inactiveTime >= 90 days) {
             Badge badge = users[msg.sender].badgeLevel;
             uint256 rate = badge == Badge.NONE ? 5 : badge == Badge.BRONZE ? 3 : badge == Badge.SILVER ? 2 : 1;
             uint256 depreciationAmount = (helperToken.balanceOf(msg.sender) * rate) / 100;
@@ -245,7 +266,7 @@ contract SuperHelper is Ownable {
 
             require(helperToken.balanceOf(msg.sender) >= totalRequired, InsufficientFunds(totalRequired));
             require(
-                helperToken.allowance(msg.sender, address(this)) >= depreciationAmount,
+                helperToken.allowance(msg.sender, address(this)) >= totalRequired,
                 InsufficientAllowance(totalRequired)
             );
             helperToken.transferFrom(msg.sender, address(this), depreciationAmount);

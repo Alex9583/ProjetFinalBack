@@ -1,7 +1,7 @@
 # SuperHelper project
 
 **SuperHelper** is a decentralized application allowing registered users to:
-- Receive an initial allocation of `HELP` tokens upon registration.
+- Receive an initial allocation of `HELP` tokens upon registration (after KYC verification).
 - Post job offers specifying token-based rewards.
 - Accept jobs posted by other users.
 - Complete tasks and receive payments in custom ERC20 `HELP` tokens.
@@ -53,12 +53,13 @@ npx hardhat ignition deploy ignition/modules/SuperHelper.ts --network <network_n
 Example network names:
 - Local development: `localhost`
 - Ethereum testnet: `sepolia`
+- Etherlink testnet: `etherlinkTestnet`
 
 ### Test coverage
 
 | File              | % Stmts | % Branch  | % Funcs | % Lines | Uncovered Lines |
 |-------------------|---------|-----------|---------|---------|-----------------|
-| contracts/        | 100     | 93.1     | 100     | 100     |                 |
+| contracts/        | 100     | 96.97     | 100     | 100     |                 |
 | HelperToken.sol   | 100     | 100       | 100     | 100     |                 |
-| SuperHelper.sol   | 100     | 93.1     | 100     | 100     |                 |
-| **All files**     | **100** | **93.1** | **100** | **100** |                 |
+| SuperHelper.sol   | 100     | 96.97     | 100     | 100     |                 |
+| **All files**     | **100** | **96.97** | **100** | **100** |                 |

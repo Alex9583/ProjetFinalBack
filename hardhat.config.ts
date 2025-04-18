@@ -26,12 +26,27 @@ const config: HardhatUserConfig = {
       url: RPC_URL_SEPOLIA,
       chainId: 11155111,
       accounts: [`${PRIVATE_KEY}`]
-    }
+    },
+    etherlinkTestnet: {
+      url: "https://node.ghostnet.etherlink.com",
+      accounts: [`${PRIVATE_KEY}`],
+    },
   },
   etherscan: {
     apiKey: {
-      sepolia: ETHERSCAN_API_KEY
-    }
+      sepolia: ETHERSCAN_API_KEY,
+      etherlinkTestnet: ETHERSCAN_API_KEY,
+    },
+    customChains: [
+      {
+        network: "etherlinkTestnet",
+        chainId: 128123,
+        urls: {
+          apiURL: "https://testnet.explorer.etherlink.com/api",
+          browserURL: "https://testnet.explorer.etherlink.com",
+        },
+      }
+    ]
   }
 };
 
